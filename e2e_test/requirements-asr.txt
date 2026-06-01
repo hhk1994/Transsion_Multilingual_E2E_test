@@ -1,0 +1,7 @@
+# ASR + WER evaluation (install into e2e_test/.venv)
+faster-whisper>=1.0.0
+jiwer>=3.0.0
+transformers>=4.40
+accelerate>=0.27
+onnxruntime>=1.20
+onnx>=1.20

@@ -1,0 +1,2 @@
+# LITs inference dependencies (pinned in this repo)
+-r ../lits_requirements.txt

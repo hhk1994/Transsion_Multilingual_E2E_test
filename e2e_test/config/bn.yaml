@@ -1,0 +1,17 @@
+# Bengali e2e text normalization
+locale: bn
+
+paths:
+  tn_root: ../Transsion_Multilingual_Text_Normalization_for_TTS
+  input_txt: trassion_test/bn_1000_sample_sent.txt
+  output_txt: output/normalized.txt
+  tn_binary: bin/bn_tts
+  manifest_txt: output/tts_manifest.txt
+  manifest_index: output/manifest.index.tsv
+
+tts:
+  model_lang: bn-en
+  manifest_txt: output/tts_manifest.txt
+  checkpoint: ../model_checkpoints/bn-en.ckpt
+  vocoder_dir: ../afnas_pupuvocoder_mix22050_24k_100band
+  output_wav_dir: output/wav
