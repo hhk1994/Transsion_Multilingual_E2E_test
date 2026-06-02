@@ -39,6 +39,28 @@ OUTPUT_TXT=output/my_norm.txt \
 
 无需 Python。规则文件使用 TN 仓库内的 `rules/bn.json`（编译时通过源码路径定位）。
 
+### 俄语 normalizer（新增）
+
+`e2e_test` 默认流程只构建 `bn_tts`。如果你需要构建 `ru_tts`，使用：
+
+```bash
+cd /222042021/hehongkai/transsion_tts/Multilingual_LITs/e2e_test
+chmod +x run_build_ru_tn.sh scripts/build_tn_ru.sh
+./run_build_ru_tn.sh
+```
+
+该流程会自动检查并准备 MorphoDiTa 依赖（`morphodita.h/.cpp`），并在缺少俄语模型时给出明确报错。默认模型路径：
+
+```bash
+../Transsion_Multilingual_Text_Normalization_for_TTS/original/morphodita/models/russian-syntagrus-morphodita-only.tagger
+```
+
+也可以覆盖：
+
+```bash
+RU_MORPH_MODEL=/path/to/russian-syntagrus-morphodita-only.tagger ./run_build_ru_tn.sh
+```
+
 ---
 
 ## 生成 TTS Manifest（已实现）
