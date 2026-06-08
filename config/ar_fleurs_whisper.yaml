@@ -1,0 +1,23 @@
+# FLEURS ar_eg → e2e Whisper benchmark (ASR-only, no TTS)
+locale: ar
+source: google/fleurs/ar_eg
+count: 1000
+duration_sec:
+  min: 10
+  max: 30
+seed: 42
+
+paths:
+  input_txt: input/ar_1000_sample_sent.txt
+  wav_dir: output/wav/ar_1000_fleurs
+  index_tsv: output/fleurs_ar_1000.index.tsv
+  stats_json: output/fleurs_ar_1000.stats.json
+  asr_output_dir: output/asr/ar_1000_fleurs_whisper
+
+asr:
+  backend: faster-whisper
+  model: large-v3
+  language: ar
+  device: cuda
+  utt_prefix: ar
+  tn_normalize_hyp: false

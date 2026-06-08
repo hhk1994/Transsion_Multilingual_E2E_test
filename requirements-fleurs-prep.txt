@@ -1,0 +1,3 @@
+# One-time deps for scripts/prepare_fleurs_ar.py
+datasets>=2.14.0
+soundfile>=0.12.0
