@@ -42,7 +42,7 @@ mkdir -p "${BIN_DIR}"
 
 echo "[build] Compiling bn_tts (ICU_ROOT=${ICU_ROOT})..."
 g++ -std=c++17 -O2 \
-  "${TN_ROOT}/bn.cpp" "${TN_ROOT}/tts_normalizer_engine.cpp" \
+  "${TN_ROOT}/bn.cpp" "${TN_ROOT}/tts_normalizer_engine.cpp" "${TN_ROOT}/ru_year_spellout.cpp" \
   -I"${TN_ROOT}" -I"${TN_ROOT}/third_party" \
   -I"${ICU_ROOT}/include" \
   -L"${ICU_ROOT}/lib" -licui18n -licuuc -licudata \

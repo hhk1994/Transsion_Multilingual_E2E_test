@@ -15,4 +15,4 @@ fi
 source "${VENV_DIR}/bin/activate"
 pip install -U pip
 pip install -r "${REQ}"
-echo "[asr-deps] OK: faster-whisper + jiwer in ${VENV_DIR}"
+echo "[asr-deps] OK: faster-whisper + jiwer + breame in ${VENV_DIR}"

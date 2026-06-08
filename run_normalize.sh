@@ -21,7 +21,22 @@ echo "  output: ${OUTPUT_TXT}"
 echo
 
 bash "${E2E_ROOT}/scripts/install_deps.sh"
-bash "${E2E_ROOT}/scripts/build_tn.sh"
+
+if [[ "${LOCALE}" == "ru" ]]; then
+  bash "${E2E_ROOT}/scripts/build_tn_ru.sh"
+  RU_MORPH_MODEL="${RU_MORPH_MODEL:-${E2E_ROOT}/../Transsion_Multilingual_Text_Normalization_for_TTS/original/morphodita/models/russian-syntagrus-morphodita-only.tagger}"
+  if [[ -z "${BN_TTS:-}" ]]; then
+    cat > "${E2E_ROOT}/bin/ru_tts_wrapper" <<EOF
+#!/usr/bin/env bash
+exec "${E2E_ROOT}/bin/ru_tts" --morph-model "${RU_MORPH_MODEL}" "\$@"
+EOF
+    chmod +x "${E2E_ROOT}/bin/ru_tts_wrapper"
+    export BN_TTS="${E2E_ROOT}/bin/ru_tts_wrapper"
+  fi
+elif [[ "${SKIP_TN_BUILD:-0}" != "1" ]]; then
+  bash "${E2E_ROOT}/scripts/build_tn.sh"
+fi
+
 bash "${E2E_ROOT}/scripts/normalize.sh"
 
 echo
