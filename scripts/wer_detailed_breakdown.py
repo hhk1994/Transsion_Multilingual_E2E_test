@@ -23,7 +23,7 @@ import sys
 if str(E2E_ROOT) not in sys.path:
     sys.path.insert(0, str(E2E_ROOT))
 
-from lib.text_match import normalize_for_wer  # noqa: E402
+from lib.text_match import normalize_texts_for_wer  # noqa: E402
 
 
 _INDEP_VOWELS = {
@@ -142,6 +142,11 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Output directory (default: same directory as wer-csv)",
     )
+    p.add_argument(
+        "--language",
+        default="",
+        help="Language code (en enables UK/US spelling normalization)",
+    )
     return p.parse_args()
 
 
@@ -172,9 +177,13 @@ def main() -> int:
     ref_words_total = 0
     confusion_counter: Counter[tuple[str, str, str]] = Counter()
 
+    language = args.language
     for r in rows:
-        ref = normalize_for_wer(r.get("ref", ""))
-        hyp = normalize_for_wer(r.get("hyp", ""))
+        ref, hyp = normalize_texts_for_wer(
+            r.get("ref", ""),
+            r.get("hyp", ""),
+            language=language,
+        )
         m = jiwer.process_words(ref, hyp)
 
         sub_total += m.substitutions

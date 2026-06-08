@@ -1,0 +1,26 @@
+# Minimal exclusions for mobile-side Russian TTS e2e (15 utterances).
+# One utt_id per line. Use: enrich_wer_report.py --exclude-file config/ru_mobile_exclude_minimal.txt
+#
+# third_lang: non-Russian, non-English primary foreign text
+# ru_0761: Chinese sentence + pinyin gloss in Russian explanation
+ru_0761
+ru_0474
+ru_0734
+ru_0804
+ru_0826
+ru_0874
+#
+# english_primary: prompt/answer mostly in English
+ru_0083
+ru_0180
+ru_0499
+ru_0929
+#
+# code_cli: SQL/Python/CLI — not speakable mobile assistant content
+ru_0095
+ru_0064
+ru_0984
+ru_0796
+#
+# ui_scrape: scraped school UI + English grammar exercise
+ru_0873

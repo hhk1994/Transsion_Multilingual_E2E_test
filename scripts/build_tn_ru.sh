@@ -17,7 +17,8 @@ fi
 BIN_DIR="${E2E_ROOT}/bin"
 OUT_BIN="${BIN_DIR}/ru_tts"
 PREP_SCRIPT="${TN_ROOT}/test/scripts/prepare_morphodita.sh"
-MORPH_INC="${TN_ROOT}/original/morphodita/build/_deps/morphodita-src/src_lib_only"
+MORPH_ROOT="${TN_ROOT}/original/morphodita"
+MORPH_INC="${MORPH_ROOT}/src_lib_only"
 MORPH_CPP="${MORPH_INC}/morphodita.cpp"
 MORPH_H="${MORPH_INC}/morphodita.h"
 RU_MORPH_MODEL="${RU_MORPH_MODEL:-${TN_ROOT}/original/morphodita/models/russian-syntagrus-morphodita-only.tagger}"
@@ -62,7 +63,7 @@ mkdir -p "${BIN_DIR}"
 
 echo "[build-ru] Compiling ru_tts (ICU_ROOT=${ICU_ROOT})..."
 g++ -std=c++17 -O2 \
-  "${TN_ROOT}/ru.cpp" "${TN_ROOT}/tts_normalizer_engine.cpp" "${MORPH_CPP}" \
+  "${TN_ROOT}/ru.cpp" "${TN_ROOT}/tts_normalizer_engine.cpp" "${TN_ROOT}/ru_year_spellout.cpp" "${MORPH_CPP}" \
   -I"${TN_ROOT}" -I"${TN_ROOT}/third_party" -I"${MORPH_INC}" \
   -I"${ICU_ROOT}/include" \
   -L"${ICU_ROOT}/lib" -licui18n -licuuc -licudata \

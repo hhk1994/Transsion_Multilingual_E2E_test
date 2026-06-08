@@ -19,15 +19,27 @@ import time
 from pathlib import Path
 from typing import Protocol
 
-import jiwer
-
 E2E_ROOT = Path(__file__).resolve().parents[1]
 if str(E2E_ROOT) not in sys.path:
     sys.path.insert(0, str(E2E_ROOT))
 
-from lib.text_match import normalize_for_wer  # noqa: E402
+from lib.hyp_tn_prep import (  # noqa: E402
+    default_source_txt,
+    load_written_lines,
+    prepare_hyp_for_tn,
+    should_merge_written_spans,
+)
+from lib.text_match import normalize_texts_for_wer  # noqa: E402
+from lib.wer_analysis import (  # noqa: E402
+    build_wer_analysis,
+    corpus_error_rate,
+    corpus_metric_key,
+    error_unit_for_language,
+    utterance_error_rates,
+)
 
-_UTT_LINE_RE = re.compile(r"^bn_(\d+)$", re.IGNORECASE)
+# e.g. bn_0001, zh_0042, en_1000, ar-en_0123
+_UTT_LINE_RE = re.compile(r"^([a-z][a-z0-9-]*)_(\d+)$", re.IGNORECASE)
 HF_MODEL_PREFIXES = ("mozilla-ai/", "openai/")
 INDIC_CONFORMER_PREFIXES = ("ai4bharat/indic-conformer",)
 
@@ -175,7 +187,17 @@ class IndicConformerTranscriber:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="ASR transcribe + WER vs normalized.txt")
-    p.add_argument("--wav-dir", type=Path, required=True, help="Directory with bn_XXXX.wav files")
+    p.add_argument(
+        "--wav-dir",
+        type=Path,
+        required=True,
+        help="Directory with <locale>_NNNN.wav files (e.g. bn_0001, zh_0042, en_1000)",
+    )
+    p.add_argument(
+        "--utt-prefix",
+        default="",
+        help="Only evaluate wav files with this locale prefix (e.g. zh, en, bn)",
+    )
     p.add_argument(
         "--normalized",
         type=Path,
@@ -225,6 +247,19 @@ def parse_args() -> argparse.Namespace:
         default=E2E_ROOT / "bin" / "bn_tts",
         help="Path to TN bn_tts binary for hypothesis normalization",
     )
+    p.add_argument(
+        "--source-txt",
+        type=Path,
+        default=None,
+        help="Pre-TN written references (for digit-span merge before hyp TN; "
+        "default: input/<lang>_1000_sample_sent.txt when present)",
+    )
+    p.add_argument(
+        "--merge-written-spans",
+        action="store_true",
+        help="Splice written digit spans into hyp before TN (char-level langs; "
+        "fixes TN cardinal vs digit-by-digit when ASR keeps Arabic digits)",
+    )
     p.add_argument("--limit", type=int, default=0, help="Max wav files (0 = all)")
     return p.parse_args()
 
@@ -247,19 +282,47 @@ def build_transcriber(args: argparse.Namespace, backend: str, compute_type: str)
     return FasterWhisperTranscriber(args.model, args.language, args.device, compute_type)
 
 
-def line_no_from_stem(stem: str) -> int:
+def parse_utt_stem(stem: str) -> tuple[str, int] | None:
     m = _UTT_LINE_RE.match(stem)
     if not m:
-        raise ValueError(f"Unexpected wav stem (expected bn_NNNN): {stem}")
-    return int(m.group(1))
+        return None
+    return m.group(1).lower(), int(m.group(2))
+
+
+def line_no_from_stem(stem: str) -> int:
+    parsed = parse_utt_stem(stem)
+    if parsed is None:
+        raise ValueError(f"Unexpected wav stem (expected <locale>_NNNN, e.g. zh_0001): {stem}")
+    return parsed[1]
 
 
 def load_normalized_lines(path: Path) -> list[str]:
     return path.read_text(encoding="utf-8").splitlines()
 
 
-def list_wavs(wav_dir: Path, limit: int) -> list[Path]:
-    wavs = sorted(wav_dir.glob("*.wav"))
+def list_wavs(wav_dir: Path, limit: int, utt_prefix: str = "") -> list[Path]:
+    prefix = utt_prefix.lower()
+    wavs: list[Path] = []
+    skipped: list[str] = []
+    for wav_path in sorted(wav_dir.glob("*.wav")):
+        parsed = parse_utt_stem(wav_path.stem)
+        if parsed is None:
+            skipped.append(wav_path.name)
+            continue
+        locale, _line_no = parsed
+        if prefix and locale != prefix:
+            continue
+        wavs.append(wav_path)
+
+    if skipped:
+        print(
+            f"[asr] WARN: skipped {len(skipped)} wav(s) with unrecognized names "
+            f"(expected <locale>_NNNN): {', '.join(skipped[:5])}"
+            + (" ..." if len(skipped) > 5 else ""),
+            file=sys.stderr,
+        )
+
+    wavs.sort(key=lambda p: parse_utt_stem(p.stem)[1])  # type: ignore[index]
     if limit > 0:
         wavs = wavs[:limit]
     return wavs
@@ -291,9 +354,24 @@ def main() -> int:
         return 1
 
     refs_all = load_normalized_lines(normalized_path)
-    wavs = list_wavs(wav_dir, args.limit)
+    merge_written_spans = (
+        args.merge_written_spans and should_merge_written_spans(args.language)
+    )
+    source_path: Path | None = None
+    written_lines: list[str] = []
+    if merge_written_spans:
+        source_path = args.source_txt.resolve() if args.source_txt else default_source_txt(E2E_ROOT, args.language)
+        if source_path.is_file():
+            written_lines = load_written_lines(source_path)
+        else:
+            print(f"[asr] WARN: written source not found ({source_path}); hyp span merge disabled")
+            merge_written_spans = False
+            source_path = None
+
+    wavs = list_wavs(wav_dir, args.limit, args.utt_prefix)
     if not wavs:
-        print(f"No wav files in {wav_dir}", file=sys.stderr)
+        hint = f" (utt_prefix={args.utt_prefix})" if args.utt_prefix else ""
+        print(f"No matching wav files in {wav_dir}{hint}", file=sys.stderr)
         return 2
 
     backend = resolve_backend(args)
@@ -303,7 +381,14 @@ def main() -> int:
         f"device={args.device} compute={compute_type if backend == 'faster-whisper' else 'n/a'}"
     )
     print(f"[asr] wav_dir={wav_dir} n={len(wavs)}")
-    print(f"[asr] tn_normalize_hyp={'on' if args.tn_normalize_hyp else 'off'} tn_bin={args.tn_bin}")
+    if args.utt_prefix:
+        print(f"[asr] utt_prefix={args.utt_prefix}")
+    if args.tn_normalize_hyp:
+        print(f"[asr] tn_normalize_hyp=on tn_bin={args.tn_bin}")
+    else:
+        print("[asr] tn_normalize_hyp=off (Whisper hyp used as-is for WER)")
+    if merge_written_spans:
+        print(f"[asr] hyp written-span merge: on source={source_path}")
 
     t0 = time.time()
     transcriber = build_transcriber(args, backend, compute_type)
@@ -311,6 +396,9 @@ def main() -> int:
 
     rows: list[dict] = []
     hyp_lines: list[str] = []
+    ref_norms: list[str] = []
+    hyp_norms: list[str] = []
+    error_unit = error_unit_for_language(args.language)
 
     try:
         for wav_path in wavs:
@@ -321,15 +409,30 @@ def main() -> int:
                 continue
 
             ref_raw = refs_all[line_no - 1]
-            ref_norm = normalize_for_wer(ref_raw)
 
             print(f"[asr] transcribing {utt_id} ...")
             hyp_raw = transcriber.transcribe(wav_path)
-            hyp_tn = hyp_tn_normalizer.normalize(hyp_raw) if hyp_tn_normalizer else hyp_raw
-            hyp_norm = normalize_for_wer(hyp_tn)
+            written = (
+                written_lines[line_no - 1]
+                if merge_written_spans and line_no <= len(written_lines)
+                else ""
+            )
+            _hyp_merged, hyp_tn = prepare_hyp_for_tn(
+                hyp_raw,
+                written,
+                language=args.language if merge_written_spans else None,
+                tn=hyp_tn_normalizer,
+            )
+            ref_norm, hyp_norm = normalize_texts_for_wer(
+                ref_raw,
+                hyp_tn,
+                language=args.language,
+            )
 
-            wer = jiwer.wer(ref_norm, hyp_norm) if ref_norm else (0.0 if not hyp_norm else 1.0)
-            cer = jiwer.cer(ref_norm, hyp_norm) if ref_norm else (0.0 if not hyp_norm else 1.0)
+            wer, cer = utterance_error_rates(ref_norm, hyp_norm, unit=error_unit)
+
+            ref_norms.append(ref_norm)
+            hyp_norms.append(hyp_norm)
 
             rows.append(
                 {
@@ -384,7 +487,12 @@ def main() -> int:
     wers_sorted = sorted(wers)
     n = len(wers)
 
+    analysis = build_wer_analysis(rows, ref_norms, hyp_norms, unit=error_unit)
+
     report = {
+        "corpus_wer": analysis["corpus_wer"],
+        "top_wer": analysis["top_wer"],
+        "confusion_pairs": analysis["confusion_pairs"],
         "wav_dir": str(wav_dir),
         "normalized": str(normalized_path),
         "asr_backend": backend,
@@ -394,6 +502,9 @@ def main() -> int:
         "compute_type": compute_type if backend == "faster-whisper" else None,
         "tn_normalize_hyp": args.tn_normalize_hyp,
         "tn_bin": str(args.tn_bin.resolve()) if args.tn_normalize_hyp else None,
+        "hyp_written_span_merge": merge_written_spans,
+        "source_txt": str(source_path) if source_path else None,
+        "utt_prefix": args.utt_prefix or None,
         "n_evaluated": n,
         "elapsed_sec": round(time.time() - t0, 2),
         "wer": {
@@ -407,7 +518,6 @@ def main() -> int:
             "p50": round(percentile(sorted(cers), 0.5), 6),
             "p95": round(percentile(sorted(cers), 0.95), 6),
         },
-        "top_wer": sorted(rows, key=lambda r: r["wer"], reverse=True)[:10],
         "outputs": {
             "wer_csv": str(csv_path),
             "hyp_tsv": str(hyp_path),
@@ -415,9 +525,28 @@ def main() -> int:
     }
     report_path = out_dir / "wer_report.json"
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (out_dir / "confusion_pairs.json").write_text(
+        json.dumps(report["confusion_pairs"], ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
-    print(f"[asr] WER mean={report['wer']['mean']} p50={report['wer']['p50']} p95={report['wer']['p95']} (n={n})")
-    print(f"[asr] CER mean={report['cer']['mean']}")
+    metric = corpus_metric_key(error_unit)
+    metric_label = metric.upper()
+    print(
+        f"[asr] {metric_label} mean={report[metric]['mean']} "
+        f"p50={report[metric]['p50']} p95={report[metric]['p95']} (n={n})"
+    )
+    if metric == "wer":
+        print(f"[asr] CER mean={report['cer']['mean']}")
+    cw = report["corpus_wer"]
+    print(
+        f"[asr] corpus {metric_label}={corpus_error_rate(cw)} "
+        f"({cw['error_unit']}-level, {cw['n_ref_tokens']} ref tokens) "
+        f"S={cw['substitutions']['count']}({cw['substitutions']['rate']}) "
+        f"D={cw['deletions']['count']}({cw['deletions']['rate']}) "
+        f"I={cw['insertions']['count']}({cw['insertions']['rate']})"
+    )
+    print(f"[asr] confusion pairs: {cw['n_confusion_pairs']}, error cases: {cw['n_error_cases']}")
     print(f"[asr] report: {report_path}")
     print(f"[asr] per-utt: {csv_path}")
     return 0

@@ -15,6 +15,7 @@ WHISPER_LANG="${WHISPER_LANG:-bn}"
 DECODING="${DECODING:-ctc}"
 TN_NORMALIZE_HYP="${TN_NORMALIZE_HYP:-1}"
 TN_BIN="${TN_BIN:-${E2E_ROOT}/bin/bn_tts}"
+UTT_PREFIX="${UTT_PREFIX:-}"
 
 if [[ ! -d "${VENV_DIR}" ]]; then
   echo "Missing ${VENV_DIR}. Create venv via ./run_synthesize.sh first." >&2
@@ -55,6 +56,10 @@ fi
 
 if [[ "${LIMIT}" =~ ^[0-9]+$ ]] && [[ "${LIMIT}" -gt 0 ]]; then
   ARGS+=(--limit "${LIMIT}")
+fi
+
+if [[ -n "${UTT_PREFIX}" ]]; then
+  ARGS+=(--utt-prefix "${UTT_PREFIX}")
 fi
 
 python "${E2E_ROOT}/scripts/transcribe_and_wer.py" "${ARGS[@]}"

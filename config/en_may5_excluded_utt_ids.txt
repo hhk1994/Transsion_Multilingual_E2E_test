@@ -1,0 +1,17 @@
+# Utterances agreed to exclude from WER (en_1000_may5)
+en_0203
+en_0893
+en_0590
+en_0600
+en_0651
+en_0153
+en_0522
+en_0859
+en_0998
+en_0245
+en_0266
+en_0216
+en_0881
+en_0219
+en_0913
+en_0471
