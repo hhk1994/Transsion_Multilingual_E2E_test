@@ -226,6 +226,115 @@ def _is_russian(language: str | None) -> bool:
     return _language_base(language) == "ru"
 
 
+def _is_arabic(language: str | None) -> bool:
+    return _language_base(language) == "ar"
+
+
+# Tanwin al-fath (ً) before alef (ا) is non-word punctuation for _PUNCT and splits
+# ref tokens (e.g. أيضًا -> أيض + ا) while ASR hyp keeps أيضا as one word.
+_AR_TANWIN_FATHA_BEFORE_ALEF = re.compile("\u064b(?=\u0627)")
+# Harakat, shadda, sukun, tanwin, and related Arabic combining marks.
+_ARABIC_DIACRITICS_RE = re.compile(
+    r"[\u0610-\u061a\u064b-\u065f\u0670\u06d6-\u06ed\u08f0-\u08ff]"
+)
+
+
+def _strip_arabic_diacritics_text(text: str) -> str:
+    """Remove Arabic combining marks before punctuation strip.
+
+    TN refs often carry shadda/tanwin (``يتحكّم``, ``إلكترونيّة``, ``أيضًا``). ``_PUNCT``
+    treats these as non-word characters and splits tokens (``يتحك`` + ``م``,
+    ``إلكتروني`` + ``ة``), while ASR hyps omit diacritics as single words.
+    """
+    return _ARABIC_DIACRITICS_RE.sub("", text)
+
+
+def _normalize_ar_tanwin_alef_text(text: str) -> str:
+    """Drop tanwin fatha before alef so ًا does not become a separate WER token."""
+    return _AR_TANWIN_FATHA_BEFORE_ALEF.sub("", text)
+
+
+_AR_WAW = "\u0648"
+_AR_ALEF = "\u0627"
+_AR_MA = "\u0645\u0627"
+# Alternate spellings of "hundred": مئة (TN) vs مائة (ASR).
+_AR_MIAH_ALT = "\u0645\u0626\u0629"
+_AR_MIAH_CANON = "\u0645\u0627\u0626\u0629"
+
+
+def _normalize_ar_miah_spelling_text(text: str) -> str:
+    """Unify hundred spelling so بالمئة and بالمائة align."""
+    return text.replace(_AR_MIAH_ALT, _AR_MIAH_CANON)
+
+
+# TN ``أميركية`` vs ASR ``أمريكية`` (American, feminine).
+_AR_AMIRKIYA_ALT = "\u0623\u0645\u064a\u0631\u0643\u064a\u0629"
+_AR_AMIRKIYA_CANON = "\u0623\u0645\u0631\u064a\u0643\u064a\u0629"
+
+
+def _normalize_ar_american_spelling_text(text: str) -> str:
+    """Unify American (feminine) spelling variants."""
+    return text.replace(_AR_AMIRKIYA_ALT, _AR_AMIRKIYA_CANON)
+
+
+# TN ``أية`` vs ASR ``أي`` before feminine nouns (e.g. أية اقتراحات / أي اقتراحات).
+_AR_AYYA_ALT = "\u0623\u064a\u0629"
+_AR_AYYA_CANON = "\u0623\u064a"
+
+
+def _normalize_ar_ayya_spelling_text(text: str) -> str:
+    """Unify feminine ``any`` spelling so أية and أي align."""
+    return text.replace(_AR_AYYA_ALT, _AR_AYYA_CANON)
+
+
+_AR_BAL = "\u0628\u0627\u0644"
+_AR_BAL_SHORT = "\u0628\u0644"
+
+
+def _ar_hyp_glues_waw(prev: str, hyp_tok: str) -> bool:
+    """True when hyp attaches the conjunction و to the previous spoken word."""
+    glued = prev + _AR_WAW
+    if not hyp_tok.startswith(glued):
+        return False
+    extra = hyp_tok[len(glued) :]
+    return extra in ("", _AR_ALEF)
+
+
+def _ar_hyp_glues_ma(prev: str, hyp_tok: str) -> bool:
+    """True when hyp glues the particle ما onto the previous spoken word."""
+    glued = prev + _AR_MA
+    if hyp_tok == glued:
+        return True
+    if prev.startswith(_AR_WAW) and hyp_tok == prev[1:] + _AR_MA:
+        return True
+    return False
+
+
+_AR_AN = "\u0623\u0646"
+_AR_LA = "\u0644\u0627"
+_AR_ALA = "\u0623\u0644\u0627"
+_AR_AN_THAK = "\u0622\u0646\u0630\u0627\u0643"
+_AR_THAK = "\u0630\u0627\u0643"
+# TN writes these as one token; ASR often splits them (ألا -> أن لا, آنذاك -> أن ذاك).
+_AR_REF_HYP_TOKEN_SPLITS: dict[str, tuple[str, str]] = {
+    _AR_ALA: (_AR_AN, _AR_LA),
+    _AR_AN_THAK: (_AR_AN, _AR_THAK),
+}
+_AR_HUWA = "\u0647\u0648"
+_AR_HIYA = "\u0647\u064a"
+_AR_MIN = "\u0645\u0646"
+# TN keeps these as two tokens; ASR glues them (ما هو -> ماهو, و هي -> وهي, ...).
+# Some ASR glues insert an extra letter (هو ما -> هولما, من هو -> ممنهو).
+_AR_HUWA_MA_GLUED = "\u0647\u0648\u0644\u0645\u0627"
+_AR_MIN_HUWA_GLUED = "\u0645\u0645\u0646\u0647\u0648"
+_AR_REF_GLUED_PAIRS: tuple[tuple[str, str, str], ...] = (
+    (_AR_MA, _AR_HUWA, _AR_MA + _AR_HUWA),
+    (_AR_WAW, _AR_HIYA, _AR_WAW + _AR_HIYA),
+    (_AR_HUWA, _AR_MA, _AR_HUWA_MA_GLUED),
+    (_AR_MIN, _AR_HUWA, _AR_MIN_HUWA_GLUED),
+)
+
+
 # TN newline escapes (applied before punctuation strip).
 _LITERAL_BACKSLASH_N = re.compile(r"\\n")
 _RU_BACKSLASH_EN = re.compile(r"\\эн", re.IGNORECASE)
@@ -3140,6 +3249,194 @@ def strip_spurious_ru_i(ref: str, hyp: str) -> str:
     return strip_spurious_ru_linebreak_tokens(ref, hyp)
 
 
+def normalize_ar_glued_waw_from_ref(ref: str, hyp: str) -> str:
+    """Merge ref ``prev`` + ``و`` when hyp glues the conjunction onto ``prev``.
+
+    TN often emits ``زيري و أن`` while ASR transcribes ``زيريو أن``; likewise
+    ``سبق و أن`` vs ``سبقوا أن``. Without this, jiwer counts a spurious ``و``
+    deletion.
+    """
+    import jiwer
+
+    ref_tokens = ref.split()
+    hyp_tokens = hyp.split()
+    if not ref_tokens or not hyp_tokens:
+        return ref
+
+    changed = True
+    while changed:
+        changed = False
+        output = jiwer.process_words(" ".join(ref_tokens), hyp)
+        for chunk in output.alignments[0]:
+            if chunk.type != "delete":
+                continue
+            ri = chunk.ref_start_idx
+            hi = chunk.hyp_start_idx
+            if ref_tokens[ri] != _AR_WAW or ri == 0 or hi == 0:
+                continue
+            prev_r = ref_tokens[ri - 1]
+            hyp_tok = hyp_tokens[hi - 1]
+            if not _ar_hyp_glues_waw(prev_r, hyp_tok):
+                continue
+            if ri + 1 < len(ref_tokens):
+                if hi >= len(hyp_tokens) or ref_tokens[ri + 1] != hyp_tokens[hi]:
+                    continue
+            elif hi < len(hyp_tokens):
+                continue
+            ref_tokens[ri - 1 : ri + 1] = [hyp_tok]
+            changed = True
+            break
+    return " ".join(ref_tokens)
+
+
+def normalize_ar_glued_ma_from_ref(ref: str, hyp: str) -> str:
+    """Merge ref ``prev`` + ``ما`` when hyp glues the particle onto ``prev``.
+
+    TN often emits ``بعد ما`` / ``كل ما`` while ASR transcribes ``بعدما`` /
+    ``كلما``. Likewise ``وفق ما`` may appear as ``فقما`` when ``و`` is dropped.
+    """
+    import jiwer
+
+    ref_tokens = ref.split()
+    hyp_tokens = hyp.split()
+    if not ref_tokens or not hyp_tokens:
+        return ref
+
+    changed = True
+    while changed:
+        changed = False
+        output = jiwer.process_words(" ".join(ref_tokens), hyp)
+        for chunk in output.alignments[0]:
+            if chunk.type != "delete":
+                continue
+            ri = chunk.ref_start_idx
+            hi = chunk.hyp_start_idx
+            if ref_tokens[ri] != _AR_MA or ri == 0 or hi == 0:
+                continue
+            prev_r = ref_tokens[ri - 1]
+            hyp_tok = hyp_tokens[hi - 1]
+            if not _ar_hyp_glues_ma(prev_r, hyp_tok):
+                continue
+            if ri + 1 < len(ref_tokens):
+                if hi >= len(hyp_tokens) or ref_tokens[ri + 1] != hyp_tokens[hi]:
+                    continue
+            elif hi < len(hyp_tokens):
+                continue
+            ref_tokens[ri - 1 : ri + 1] = [hyp_tok]
+            changed = True
+            break
+    return " ".join(ref_tokens)
+
+
+def normalize_ar_split_ref_compounds_from_ref(ref: str, hyp: str) -> str:
+    """Split ref compounds when hyp already uses the decomposed ASR spelling.
+
+    TN may emit ``ألا`` / ``آنذاك`` as single tokens while ASR outputs ``أن لا`` /
+    ``أن ذاك``, which otherwise yields a spurious ``أن`` insertion plus a false
+    ``ألا`` -> ``لا`` substitution.
+    """
+    import jiwer
+
+    ref_tokens = ref.split()
+    hyp_tokens = hyp.split()
+    if not ref_tokens or not hyp_tokens:
+        return ref
+
+    changed = True
+    while changed:
+        changed = False
+        output = jiwer.process_words(" ".join(ref_tokens), hyp)
+        for chunk in output.alignments[0]:
+            if chunk.type != "substitute":
+                continue
+            ri = chunk.ref_start_idx
+            hi = chunk.hyp_start_idx
+            ref_tok = ref_tokens[ri]
+            split = _AR_REF_HYP_TOKEN_SPLITS.get(ref_tok)
+            if split is None or hi == 0:
+                continue
+            hyp1, hyp2 = split
+            if hyp_tokens[hi] != hyp2 or hyp_tokens[hi - 1] != hyp1:
+                continue
+            ref_tokens[ri : ri + 1] = [hyp1, hyp2]
+            changed = True
+            break
+    return " ".join(ref_tokens)
+
+
+def normalize_ar_split_bal_prefix_from_ref(ref: str, hyp: str) -> str:
+    """Split ref ``بالX`` into ``بل`` + ``X`` when hyp uses the decomposed form.
+
+    TN often emits ``بالقرب`` / ``بالإنجليزية`` while ASR outputs ``بل قرب`` /
+    ``بل إنجليزية``, which otherwise yields a spurious ``بل`` insertion.
+    """
+    import jiwer
+
+    ref_tokens = ref.split()
+    hyp_tokens = hyp.split()
+    if not ref_tokens or not hyp_tokens:
+        return ref
+
+    changed = True
+    while changed:
+        changed = False
+        output = jiwer.process_words(" ".join(ref_tokens), hyp)
+        for chunk in output.alignments[0]:
+            if chunk.type != "substitute":
+                continue
+            ri = chunk.ref_start_idx
+            hi = chunk.hyp_start_idx
+            ref_tok = ref_tokens[ri]
+            if not ref_tok.startswith(_AR_BAL) or len(ref_tok) <= len(_AR_BAL):
+                continue
+            rest = ref_tok[len(_AR_BAL) :]
+            if not rest or hi >= len(hyp_tokens) or hyp_tokens[hi] != rest:
+                continue
+            if hi == 0 or hyp_tokens[hi - 1] != _AR_BAL_SHORT:
+                continue
+            ref_tokens[ri : ri + 1] = [_AR_BAL_SHORT, rest]
+            changed = True
+            break
+    return " ".join(ref_tokens)
+
+
+def normalize_ar_merge_ref_glued_particles_from_ref(ref: str, hyp: str) -> str:
+    """Merge ref particle pairs when hyp glues them into one token.
+
+    TN may emit ``ما هو`` / ``و هي`` / ``هو ما`` / ``من هو`` while ASR outputs
+    ``ماهو`` / ``وهي`` / ``هولما`` / ``ممنهو``, which otherwise counts spurious
+    ``هو``/``هي``/``ما``/``من`` deletions.
+    """
+    ref_tokens = ref.split()
+    hyp_tokens = hyp.split()
+    if not ref_tokens or not hyp_tokens:
+        return ref
+
+    changed = True
+    while changed:
+        changed = False
+        for ri in range(len(ref_tokens) - 1):
+            for part1, part2, glued in _AR_REF_GLUED_PAIRS:
+                if ref_tokens[ri] != part1 or ref_tokens[ri + 1] != part2:
+                    continue
+                for hi, hyp_tok in enumerate(hyp_tokens):
+                    if hyp_tok != glued:
+                        continue
+                    if ri + 2 < len(ref_tokens):
+                        if hi + 1 >= len(hyp_tokens) or ref_tokens[ri + 2] != hyp_tokens[hi + 1]:
+                            continue
+                    elif hi + 1 < len(hyp_tokens):
+                        continue
+                    ref_tokens[ri : ri + 2] = [glued]
+                    changed = True
+                    break
+                if changed:
+                    break
+            if changed:
+                break
+    return " ".join(ref_tokens)
+
+
 def normalize_texts_for_wer(
     ref: str,
     hyp: str,
@@ -3204,6 +3501,12 @@ def normalize_texts_for_wer(
         ref_norm = normalize_ru_tri_to_three_from_ref(ref_norm, hyp_norm)
         ref_norm = normalize_ru_spoken_pair_to_hyp_digit_from_ref(ref_norm, hyp_norm)
         ref_norm = normalize_ru_otvet_to_otvety_from_ref(ref_norm, hyp_norm)
+    if _is_arabic(language):
+        ref_norm = normalize_ar_glued_waw_from_ref(ref_norm, hyp_norm)
+        ref_norm = normalize_ar_glued_ma_from_ref(ref_norm, hyp_norm)
+        ref_norm = normalize_ar_split_ref_compounds_from_ref(ref_norm, hyp_norm)
+        ref_norm = normalize_ar_split_bal_prefix_from_ref(ref_norm, hyp_norm)
+        ref_norm = normalize_ar_merge_ref_glued_particles_from_ref(ref_norm, hyp_norm)
     return ref_norm, hyp_norm
 
 
@@ -3633,6 +3936,12 @@ def normalize_for_wer(text: str, *, language: str | None = None) -> str:
         text = normalize_ampm_markers(text)
         text = normalize_en_us_abbrev_markers(text)
         text = normalize_en_contractions(text)
+    if _is_arabic(language):
+        text = _strip_arabic_diacritics_text(text)
+        text = _normalize_ar_tanwin_alef_text(text)
+        text = _normalize_ar_miah_spelling_text(text)
+        text = _normalize_ar_american_spelling_text(text)
+        text = _normalize_ar_ayya_spelling_text(text)
     text = _PUNCT.sub(" ", text)
     text = _WHITESPACE.sub(" ", text).strip()
     text = text.casefold()
