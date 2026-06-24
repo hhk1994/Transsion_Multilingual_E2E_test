@@ -267,14 +267,15 @@ def _normalize_ar_miah_spelling_text(text: str) -> str:
     return text.replace(_AR_MIAH_ALT, _AR_MIAH_CANON)
 
 
-# TN ``أميركية`` vs ASR ``أمريكية`` (American, feminine).
-_AR_AMIRKIYA_ALT = "\u0623\u0645\u064a\u0631\u0643\u064a\u0629"
-_AR_AMIRKIYA_CANON = "\u0623\u0645\u0631\u064a\u0643\u064a\u0629"
+# TN ``أميرك`` vs ASR ``أمريك`` (American). Stem-level so it covers all
+# inflections: أميركي/أميركية/أميركيين -> أمريكي/أمريكية/أمريكيين.
+_AR_AMIRK_ALT = "\u0623\u0645\u064a\u0631\u0643"
+_AR_AMIRK_CANON = "\u0623\u0645\u0631\u064a\u0643"
 
 
 def _normalize_ar_american_spelling_text(text: str) -> str:
-    """Unify American (feminine) spelling variants."""
-    return text.replace(_AR_AMIRKIYA_ALT, _AR_AMIRKIYA_CANON)
+    """Unify American spelling variants at the stem (أميرك -> أمريك)."""
+    return text.replace(_AR_AMIRK_ALT, _AR_AMIRK_CANON)
 
 
 # TN ``أية`` vs ASR ``أي`` before feminine nouns (e.g. أية اقتراحات / أي اقتراحات).
@@ -295,6 +296,73 @@ _AR_ZIRI_CANON = "\u0632\u064a\u0631"
 def _normalize_ar_ziri_spelling_text(text: str) -> str:
     """Unify the proper name ``زيري`` / ``زير`` transliteration variants."""
     return text.replace(_AR_ZIRI_ALT, _AR_ZIRI_CANON)
+
+
+# Proper name transliteration variant: ref ``زاغالو`` (Zagallo) vs ASR ``زغالو``.
+_AR_ZAGALLO_ALT = "\u0632\u0627\u063a\u0627\u0644\u0648"
+_AR_ZAGALLO_CANON = "\u0632\u063a\u0627\u0644\u0648"
+
+
+def _normalize_ar_zagallo_spelling_text(text: str) -> str:
+    """Unify the proper name ``زاغالو`` / ``زغالو`` transliteration variants."""
+    return text.replace(_AR_ZAGALLO_ALT, _AR_ZAGALLO_CANON)
+
+
+# Place name transliteration variant: ref ``طوكيو`` vs ASR ``توكيو`` (Tokyo, ط/ت).
+_AR_TOKYO_ALT = "\u0637\u0648\u0643\u064a\u0648"
+_AR_TOKYO_CANON = "\u062a\u0648\u0643\u064a\u0648"
+
+
+def _normalize_ar_tokyo_spelling_text(text: str) -> str:
+    """Unify the place name ``طوكيو`` / ``توكيو`` transliteration variants."""
+    return text.replace(_AR_TOKYO_ALT, _AR_TOKYO_CANON)
+
+
+# Tens (20-90) case-ending unification: spoken refs use the genitive/accusative
+# ``-ين`` form while digit-expanded hyps default to the nominative ``-ون`` form
+# (e.g. ref ثلاثين vs hyp 30 -> ثلاثون). Same number, so fold ``-ون`` -> ``-ين``
+# on both sides. Applied before alef unification so أربعون still matches.
+_AR_TENS_NOMINATIVE_TO_GENITIVE = {
+    "\u0639\u0634\u0631\u0648\u0646": "\u0639\u0634\u0631\u064a\u0646",  # عشرون -> عشرين
+    "\u062b\u0644\u0627\u062b\u0648\u0646": "\u062b\u0644\u0627\u062b\u064a\u0646",  # ثلاثون -> ثلاثين
+    "\u0623\u0631\u0628\u0639\u0648\u0646": "\u0623\u0631\u0628\u0639\u064a\u0646",  # أربعون -> أربعين
+    "\u062e\u0645\u0633\u0648\u0646": "\u062e\u0645\u0633\u064a\u0646",  # خمسون -> خمسين
+    "\u0633\u062a\u0648\u0646": "\u0633\u062a\u064a\u0646",  # ستون -> ستين
+    "\u0633\u0628\u0639\u0648\u0646": "\u0633\u0628\u0639\u064a\u0646",  # سبعون -> سبعين
+    "\u062b\u0645\u0627\u0646\u0648\u0646": "\u062b\u0645\u0627\u0646\u064a\u0646",  # ثمانون -> ثمانين
+    "\u062a\u0633\u0639\u0648\u0646": "\u062a\u0633\u0639\u064a\u0646",  # تسعون -> تسعين
+}
+
+
+def _normalize_ar_tens_case_text(text: str) -> str:
+    """Fold nominative tens (-ون) to the genitive (-ين) form so case differs harmlessly."""
+    for nom, gen in _AR_TENS_NOMINATIVE_TO_GENITIVE.items():
+        if nom in text:
+            text = text.replace(nom, gen)
+    return text
+
+
+# Final WER-only step: unify standard Arabic orthographic variants. Applied
+# symmetrically to ref and hyp AFTER all hamza-dependent rules have run, so e.g.
+# آخر/أخر, الماضى/الماضي and الثقه/الثقة no longer count as substitutions:
+#   - alef/hamza-alef (آ إ أ ٱ -> ا)
+#   - alef maqsura -> ya (ى -> ي)
+#   - taa marbuta -> ha (ة -> ه)
+_AR_ORTHOGRAPHY_VARIANTS = str.maketrans(
+    {
+        "\u0622": "\u0627",  # آ alef with madda above
+        "\u0623": "\u0627",  # أ alef with hamza above
+        "\u0625": "\u0627",  # إ alef with hamza below
+        "\u0671": "\u0627",  # ٱ alef wasla
+        "\u0649": "\u064a",  # ى alef maqsura -> ي ya
+        "\u0629": "\u0647",  # ة taa marbuta -> ه ha
+    }
+)
+
+
+def _normalize_ar_orthography_text(text: str) -> str:
+    """Unify alef/maqsura/taa-marbuta variants (final WER-only step)."""
+    return text.translate(_AR_ORTHOGRAPHY_VARIANTS)
 
 
 _AR_BAL = "\u0628\u0627\u0644"
@@ -337,11 +405,14 @@ _AR_MIN = "\u0645\u0646"
 # Some ASR glues insert an extra letter (هو ما -> هولما, من هو -> ممنهو).
 _AR_HUWA_MA_GLUED = "\u0647\u0648\u0644\u0645\u0627"
 _AR_MIN_HUWA_GLUED = "\u0645\u0645\u0646\u0647\u0648"
+# TN keeps the conjunction و apart from كأنه; ASR glues them (و كأنه -> وكأنه).
+_AR_KAANNAHU = "\u0643\u0623\u0646\u0647"
 _AR_REF_GLUED_PAIRS: tuple[tuple[str, str, str], ...] = (
     (_AR_MA, _AR_HUWA, _AR_MA + _AR_HUWA),
     (_AR_WAW, _AR_HIYA, _AR_WAW + _AR_HIYA),
     (_AR_HUWA, _AR_MA, _AR_HUWA_MA_GLUED),
     (_AR_MIN, _AR_HUWA, _AR_MIN_HUWA_GLUED),
+    (_AR_WAW, _AR_KAANNAHU, _AR_WAW + _AR_KAANNAHU),
 )
 
 
@@ -3517,6 +3588,8 @@ def normalize_texts_for_wer(
         ref_norm = normalize_ar_split_ref_compounds_from_ref(ref_norm, hyp_norm)
         ref_norm = normalize_ar_split_bal_prefix_from_ref(ref_norm, hyp_norm)
         ref_norm = normalize_ar_merge_ref_glued_particles_from_ref(ref_norm, hyp_norm)
+        ref_norm = _normalize_ar_orthography_text(ref_norm)
+        hyp_norm = _normalize_ar_orthography_text(hyp_norm)
     return ref_norm, hyp_norm
 
 
@@ -3953,6 +4026,9 @@ def normalize_for_wer(text: str, *, language: str | None = None) -> str:
         text = _normalize_ar_american_spelling_text(text)
         text = _normalize_ar_ayya_spelling_text(text)
         text = _normalize_ar_ziri_spelling_text(text)
+        text = _normalize_ar_zagallo_spelling_text(text)
+        text = _normalize_ar_tokyo_spelling_text(text)
+        text = _normalize_ar_tens_case_text(text)
     text = _PUNCT.sub(" ", text)
     text = _WHITESPACE.sub(" ", text).strip()
     text = text.casefold()
