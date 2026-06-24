@@ -33,6 +33,10 @@ EOF
     chmod +x "${E2E_ROOT}/bin/ru_tts_wrapper"
     export BN_TTS="${E2E_ROOT}/bin/ru_tts_wrapper"
   fi
+elif [[ "${LOCALE}" == "ar" ]]; then
+  export TN_ROOT="${TN_ROOT:-${E2E_ROOT}/../ICU/for_github}"
+  bash "${E2E_ROOT}/scripts/build_tn_ar.sh"
+  export BN_TTS="${BN_TTS:-${E2E_ROOT}/bin/ar_tts}"
 elif [[ "${SKIP_TN_BUILD:-0}" != "1" ]]; then
   bash "${E2E_ROOT}/scripts/build_tn.sh"
 fi

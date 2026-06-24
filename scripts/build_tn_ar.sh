@@ -7,7 +7,9 @@ E2E_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 if [[ -n "${TN_ROOT:-}" ]]; then
   TN_ROOT="$(cd "${TN_ROOT}" && pwd)"
 else
-  if [[ -d "${E2E_ROOT}/../Transsion_Multilingual_Text_Normalization_for_TTS" ]]; then
+  if [[ -d "${E2E_ROOT}/../ICU/for_github" ]]; then
+    TN_ROOT="$(cd "${E2E_ROOT}/../ICU/for_github" && pwd)"
+  elif [[ -d "${E2E_ROOT}/../Transsion_Multilingual_Text_Normalization_for_TTS" ]]; then
     TN_ROOT="$(cd "${E2E_ROOT}/../Transsion_Multilingual_Text_Normalization_for_TTS" && pwd)"
   else
     TN_ROOT="$(cd "${E2E_ROOT}/../../Transsion_Multilingual_Text_Normalization_for_TTS" && pwd)"
