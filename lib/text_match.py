@@ -287,6 +287,16 @@ def _normalize_ar_ayya_spelling_text(text: str) -> str:
     return text.replace(_AR_AYYA_ALT, _AR_AYYA_CANON)
 
 
+# Proper name transliteration variant: ref ``زيري`` (Ziri) vs ASR ``زير``.
+_AR_ZIRI_ALT = "\u0632\u064a\u0631\u064a"
+_AR_ZIRI_CANON = "\u0632\u064a\u0631"
+
+
+def _normalize_ar_ziri_spelling_text(text: str) -> str:
+    """Unify the proper name ``زيري`` / ``زير`` transliteration variants."""
+    return text.replace(_AR_ZIRI_ALT, _AR_ZIRI_CANON)
+
+
 _AR_BAL = "\u0628\u0627\u0644"
 _AR_BAL_SHORT = "\u0628\u0644"
 
@@ -3942,6 +3952,7 @@ def normalize_for_wer(text: str, *, language: str | None = None) -> str:
         text = _normalize_ar_miah_spelling_text(text)
         text = _normalize_ar_american_spelling_text(text)
         text = _normalize_ar_ayya_spelling_text(text)
+        text = _normalize_ar_ziri_spelling_text(text)
     text = _PUNCT.sub(" ", text)
     text = _WHITESPACE.sub(" ", text).strip()
     text = text.casefold()
