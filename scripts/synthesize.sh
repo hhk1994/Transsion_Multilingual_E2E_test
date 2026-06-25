@@ -11,7 +11,11 @@ _abs_path() {
   if [[ "${p}" != /* ]]; then
     p="${E2E_ROOT}/${p#./}"
   fi
-  echo "$(cd "$(dirname "${p}")" && pwd)/$(basename "${p}")"
+  local dir base
+  base="$(basename "${p}")"
+  dir="$(dirname "${p}")"
+  mkdir -p "${dir}"
+  echo "$(cd "${dir}" && pwd)/${base}"
 }
 
 LOCALE="${LOCALE:-bn}"
@@ -69,17 +73,25 @@ trap cleanup EXIT
 
 mkdir -p "${OUTPUT_WAV_DIR}"
 
-if [[ "${MODEL_LANG}" == "bn-en" ]]; then
-  AFNAS_FRONTEND_SR=22050
-else
-  AFNAS_FRONTEND_SR=24000
-fi
-
-VOCODER_TYPE="${VOCODER_TYPE:-afnas}"
+VOCODER_TYPE="${VOCODER_TYPE:-vocos}"
+VOCOS_CHECKPOINT="${VOCOS_CHECKPOINT:-${LITS_ROOT}/vocos/generator.ckpt}"
+VOCOS_ROOT="${VOCOS_ROOT:-${LITS_ROOT}}"
 HIFIGAN_CHECKPOINT="${HIFIGAN_CHECKPOINT:-}"
 HIFIGAN_CONFIG="${HIFIGAN_CONFIG:-auto}"
 LEGACY_SYMBOLS_FILE="${LEGACY_SYMBOLS_FILE:-}"
 OUTPUT_SAMPLE_RATE="${OUTPUT_SAMPLE_RATE:-}"
+
+if [[ "${VOCODER_TYPE}" == "vocos" ]]; then
+  OUTPUT_SAMPLE_RATE="${OUTPUT_SAMPLE_RATE:-24000}"
+  if [[ ! -f "${VOCOS_CHECKPOINT}" ]]; then
+    echo "Vocos checkpoint not found: ${VOCOS_CHECKPOINT}" >&2
+    exit 1
+  fi
+elif [[ "${MODEL_LANG}" == "bn-en" ]]; then
+  AFNAS_FRONTEND_SR=22050
+else
+  AFNAS_FRONTEND_SR=24000
+fi
 
 VOCODER_DIR="${VOCODER_DIR:-${LITS_ROOT}/afnas_pupuvocoder_mix22050_24k_100band}"
 if [[ "${VOCODER_TYPE}" == "afnas" ]]; then
@@ -108,8 +120,8 @@ elif [[ "${VOCODER_TYPE}" == "hifigan" ]]; then
   else
     OUTPUT_SAMPLE_RATE="${OUTPUT_SAMPLE_RATE:-22050}"
   fi
-else
-  echo "Unsupported VOCODER_TYPE: ${VOCODER_TYPE}" >&2
+elif [[ "${VOCODER_TYPE}" != "vocos" ]]; then
+  echo "Unsupported VOCODER_TYPE: ${VOCODER_TYPE} (expected vocos, afnas, or hifigan)" >&2
   exit 1
 fi
 
@@ -132,7 +144,12 @@ SYNTH_ARGS=(
   --text_normalization off
 )
 
-if [[ "${VOCODER_TYPE}" == "afnas" ]]; then
+if [[ "${VOCODER_TYPE}" == "vocos" ]]; then
+  SYNTH_ARGS+=(
+    --vocos_checkpoint "${VOCOS_CHECKPOINT}"
+    --vocos_root "${VOCOS_ROOT}"
+  )
+elif [[ "${VOCODER_TYPE}" == "afnas" ]]; then
   SYNTH_ARGS+=(
     --vocoder_dir "${VOCODER_DIR}"
     --afnas_frontend_sr "${AFNAS_FRONTEND_SR}"
